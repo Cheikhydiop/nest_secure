@@ -1,0 +1,241 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            Int        @id @default(autoincrement())
+  nom           String     @db.VarChar(100)
+  prenom        String     @db.VarChar(100)
+  phone         String     @unique @db.VarChar(20)
+  admin         Admin?
+  agent         Agent?
+  createdAt     DateTime?   @default(now())
+  expiresAt     DateTime?  @default(dbgenerated("CURRENT_TIMESTAMP + INTERVAL '1 MINUTE'"))
+  otp           String?    // OTP généré pour la vérification
+  otpExpiresAt  DateTime?  // Date d'expiration de l'OTP
+}
+
+
+
+model Admin {
+  id            Int           @id @default(autoincrement())
+  user_id       Int           @unique
+  user          User          @relation(fields: [user_id], references: [id])
+  structure     String?       @db.VarChar(100)
+  password      String        @db.VarChar(255)
+  email         String        @unique @db.VarChar(100)
+  role          Admin_Role    @default(admin)
+  status        Admin_Status  @default(actif)
+}
+
+model SocieteGardinage {
+  id         Int              @id @default(autoincrement())
+  nom        String           @db.VarChar(100)
+  email      String?          @unique @db.VarChar(100)
+  prenom     String?          @db.VarChar(100)
+  structure  String?          @db.VarChar(100)
+  contact    String?          @db.VarChar(100)
+  status     Societe_Status   @default(actif)
+  agents     Agent[]
+}
+
+model Agent {
+  id                  Int                 @id @default(autoincrement())
+  user_id             Int                 @unique
+  user                User                @relation(fields: [user_id], references: [id])
+  societe_gardinage_id Int?
+  societe_gardinage   SocieteGardinage?   @relation(fields: [societe_gardinage_id], references: [id])
+  empreinte  String   @db.VarChar(255) @unique
+  status              String?             @db.VarChar(50)
+  quota               Decimal?            @db.Decimal(10, 2)
+  code_pin            String?             @db.VarChar(50)
+  cumule_retard       Decimal?            @db.Decimal(10, 2)
+  email               String?             @unique @db.VarChar(100)
+  
+  role                Agent_Role          @default(agent_simple)
+  statut              Agent_Status        @default(inactif)
+  rondes              Ronde[]
+  presences           Presence[]
+  plannings           Planning[]
+  transfers           TransferVigile[]
+  demande_absences    DemandeAbsence[]
+}
+
+
+model Region {
+  id            Int     @id @default(autoincrement())
+  nom_region    String          @unique
+  sites         Site[]
+}
+
+model TransferVigile {
+  id                Int     @id @default(autoincrement())
+  agent_id          Int
+  agent             Agent   @relation(fields: [agent_id], references: [id])
+  ancien_site_id    Int
+  ancien_site       Site    @relation("AncienSiteTransfers", fields: [ancien_site_id], references: [id])
+  nouveau_site_id   Int
+  nouveau_site      Site    @relation("NouveauSiteTransfers", fields: [nouveau_site_id], references: [id])
+  date_transfert    DateTime @db.Date
+}
+
+model Site {
+  id            Int             @id @default(autoincrement())
+
+  nom_site  String @unique
+  region_id     Int
+  region        Region          @relation(fields: [region_id], references: [id])
+  status        Site_Status     @default(actif)
+  rondes        Ronde[]
+  plannings     Planning[]
+  batiments     Batiment[]      // Relation avec les bâtiments
+  transfers_ancien TransferVigile[] @relation("AncienSiteTransfers")
+  transfers_nouveau TransferVigile[] @relation("NouveauSiteTransfers")
+}
+
+model Batiment {
+  id            Int             @id @default(autoincrement())
+  nom_batiment  String          // Enlever la contrainte @unique
+  site_id       Int             // Clé étrangère pour la relation avec Site
+  site          Site            @relation(fields: [site_id], references: [id])
+}
+
+
+model Ronde {
+  id            Int             @id @default(autoincrement())
+  qrcode        String?         @db.VarChar(255)
+  emplacement   String?         @db.VarChar(100)
+  agent_id      Int?
+  agent         Agent?          @relation(fields: [agent_id], references: [id])
+  site_id       Int
+  site          Site            @relation(fields: [site_id], references: [id])
+  status        Ronde_Status    @default(non_approuve)
+  incidents     Incident[]
+  date          DateTime        @default(now()) 
+  favori        Boolean         @default(false) 
+}
+
+
+model Incident {
+  id            Int             @id @default(autoincrement())
+  description   String?         @db.Text
+  date          DateTime        @db.Date
+  type          String          @db.VarChar(50)
+  ronde_id      Int?
+  ronde         Ronde?          @relation(fields: [ronde_id], references: [id])
+  medias        Media[]
+}
+
+model Media {
+  id            Int             @id @default(autoincrement())
+  type          String          @db.VarChar(50)
+  url           String          @db.VarChar(255)
+  incident_id   Int?
+  incident      Incident?       @relation(fields: [incident_id], references: [id])
+}
+
+model Presence {
+  id            Int             @id @default(autoincrement())
+  agent_id      Int
+  agent         Agent           @relation(fields: [agent_id], references: [id])
+  heure_entre   DateTime
+  heure_sorti   DateTime?
+  status        Presence_Status @default(absent)
+  date          DateTime        @db.Date
+  justifiable            Boolean           @default(false)  // Indicateur si la présence est justifiable
+  raison_justification   String?           @db.VarChar(255) // Description de la raison si présence justifiée
+}
+
+model Planning {
+  id            Int             @id @default(autoincrement())
+  agent_id      Int
+  agent         Agent           @relation(fields: [agent_id], references: [id])
+  site_id       Int
+  site          Site            @relation(fields: [site_id], references: [id])
+  status        String?         @db.VarChar(50)
+  heure_entre   DateTime
+  heure_sorti   DateTime
+  horaire       Horaire
+  date_id       Int
+  date          DatePlanning    @relation(fields: [date_id], references: [id])
+}
+
+model DatePlanning {
+  id            Int             @id @default(autoincrement())
+  date          DateTime        @db.Date
+  plannings     Planning[]      // Relation 1:N avec Planning
+}
+
+
+model DemandeAbsence {
+  id            Int                 @id @default(autoincrement())
+  agent_id      Int
+  agent         Agent               @relation(fields: [agent_id], references: [id])
+  date          DateTime            @db.Date
+  status        Demande_Absence_Status @default(en_attente)
+}
+
+
+enum Admin_Role {
+  admin
+  super_admin
+}
+
+enum Admin_Status {
+  actif
+  inactif
+}
+
+enum Societe_Status {
+  actif
+  inactif
+}
+
+enum Agent_Role {
+  chef_post
+  agent_simple
+}
+
+enum Agent_Status {
+  actif
+  inactif
+}
+
+enum Site_Status {
+  actif
+  inactif
+}
+
+enum Ronde_Status {
+  approuve
+  non_approuve
+}
+
+enum Presence_Status {
+  present
+  absent
+  retard
+}
+
+enum Horaire {
+  matin
+  soir
+  nuit
+}
+
+enum Demande_Absence_Status {
+  accepter
+  refuser
+  en_attente
+}
+
+
+
+
+
+
